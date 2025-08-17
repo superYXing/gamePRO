@@ -1,0 +1,58 @@
+# Directories that Ren'Py changes files in.
+/game/saves
+/game/cache
+
+# Compiled script files. These are important for saving, and so should
+# be preserved by developer and build systems after the game has been released.
+/game/**/*.rpyc
+/game/**/*.rpymc
+
+# Files Ren'Py can generate.
+/game/**/*.bak
+/game/**/*.new
+/game/**/*.old
+
+# Error, log, and output files.
+/errors.txt
+/files.txt
+/image_cache.txt
+/log.txt
+/save_dump.txt
+/traceback.txt
+
+# Launcher-generated files.
+/dialogue.tab
+/dialogue.txt
+/strings.json
+
+# TTS related files with sensitive information
+/game/audio/tts/*.wav
+/game/audio/tts/*.mp3
+/game/tts_config.rpy
+
+# Test files that may contain API keys
+test_real_tts.py
+single_tts_test.py
+test_game_integration.py
+final_verification.py
+
+# Environment files
+.env
+.env.local
+secrets.json
+config/secrets.py
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
