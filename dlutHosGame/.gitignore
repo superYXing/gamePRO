@@ -28,13 +28,35 @@
 # TTS related files with sensitive information
 /game/audio/tts/*.wav
 /game/audio/tts/*.mp3
+/game/audio/tts/*.ogg
 /game/tts_config.rpy
+
+# API Keys and sensitive configuration files
+**/api_key*
+**/secret*
+**/*key*.py
+**/*config*.py
+*api*.json
+*secret*.json
+*credential*.json
+
+# Specific files that contain API keys
+game/script.rpy
+game/day1.rpy
+game/tts_module.py
+game/ai_module.py
 
 # Test files that may contain API keys
 test_real_tts.py
 single_tts_test.py
 test_game_integration.py
 final_verification.py
+test_*_tts.py
+*test*.py
+game/simple_tts_test.py
+game/generate_complete_day1_audio.py
+game/test_realtime_tts.py
+game/generate_day1_audio.py
 
 # Environment files
 .env

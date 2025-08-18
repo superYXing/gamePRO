@@ -1,18 +1,32 @@
-# dlutHosGame - 医院游戏（带TTS语音合成）
+# dlutHosGame - 医院游戏（带增强 TTS 语音合成）
 
-一个基于Ren'Py的互动视觉小说游戏，集成了讯飞语音合成(TTS)功能，支持实时朗读对话文本。
+一个基于 Ren'Py 的互动视觉小说游戏，内置增强 TTS 语音合成，支持 OpenAI 兼容 API，具备角色语音特色、智能情感识别和语速控制。
+
+## 🎉 最新更新（2025-08-18）
+
+✅ **TTS 功能完全重构**:
+- 完全移除讯飞代码，仅使用 OpenAI TTS
+- 支持情感和语速控制（6种情感 + 0.25x-4.0x语速）
+- 每个角色都有专属语音特色
+- 智能情感识别（根据对话内容自动调整）
+- 使用 dotenv 安全管理 API 密钥
+
+✅ **游戏中 TTS 已就绪**:
+- 对话显示时自动播放 TTS
+- 语法错误已修复，游戏可正常启动
+- 所有测试脚本验证通过
 
 ## 🎮 游戏特色
 
 - **互动式医院故事**：沉浸式的医院环境体验
-- **实时语音朗读**：集成讯飞TTS，自动朗读所有对话
+- **实时语音朗读**：集成OpenAI兼容流式TTS（推荐）与讯飞TTS回退
 - **智能文本处理**：自动清理Ren'Py标记，确保朗读内容清晰
 - **音频文件保存**：生成的语音文件自动保存，可重复播放
 
 ## 🔧 技术栈
 
 - **游戏引擎**：Ren'Py 8.4.1
-- **语音合成**：讯飞开放平台 TTS API
+- **语音合成**：OpenAI兼容 TTS API（如 yunwu.ai）；回退支持讯飞开放平台 TTS API
 - **网络通信**：WebSocket客户端
 - **音频格式**：WAV/MP3
 
@@ -50,18 +64,24 @@ git clone https://github.com/your-username/dlutHosGame.git
 cd dlutHosGame
 ```
 
-### 3. 配置TTS API
+### 3. 配置TTS（推荐：OpenAI兼容流式TTS）
 
-1. 访问[讯飞开放平台](https://www.xfyun.cn/services/online_tts)注册账号
-2. 创建语音合成应用，获取API凭证
-3. 复制 `game/tts_config_template.rpy` 为 `game/tts_config.rpy`
-4. 在 `tts_config.rpy` 中填入你的API凭证：
+1) 复制配置模板
 
-```python
-TTS_APP_ID = "your_app_id_here"
-TTS_API_KEY = "your_api_key_here"  
-TTS_API_SECRET = "your_api_secret_here"
+- 复制 `game/tts_config_template.rpy` 为 `game/tts_config.rpy`
+
+2) 设置系统环境变量（PowerShell 示例）
+
+```powershell
+$Env:OPENAI_BASE_URL = "https://api.yunwu.ai/v1"  # 或 https://api.openai.com/v1
+$Env:OPENAI_API_KEY  = "sk-..."
+$Env:OPENAI_TTS_MODEL = "gpt-4o-mini-tts"  # 或 tts-1 等
+$Env:OPENAI_TTS_VOICE = "alloy"
 ```
+
+3) 运行游戏：若OpenAI配置有效，将自动启用OpenAI TTS；否则尝试回退到讯飞环境变量：
+
+- `XF_TTS_APP_ID`, `XF_TTS_API_KEY`, `XF_TTS_API_SECRET`
 
 ### 4. 运行游戏
 
@@ -71,7 +91,7 @@ TTS_API_SECRET = "your_api_secret_here"
 
 ## 🎯 TTS功能说明
 
-### 自动语音朗读
+### 自动语音朗读与格式
 
 - 游戏中所有对话都会自动触发TTS朗读
 - 支持中英文混合文本
@@ -80,8 +100,8 @@ TTS_API_SECRET = "your_api_secret_here"
 ### 音频文件管理
 
 - 生成的语音文件保存在 `game/audio/tts/` 目录
-- 文件命名格式：`tts_时间戳_文本哈希.wav`
-- 支持WAV和MP3格式（需要ffmpeg）
+- 文件命名格式：`tts_时间戳_文本哈希.mp3`（OpenAI流式）或 `.wav/.mp3`（回退）
+- 若需要WAV→MP3转换，建议安装 ffmpeg（回退路径使用）
 
 ### 调试功能
 
@@ -98,10 +118,9 @@ TTS音频已保存: game/audio/tts/tts_xxxxx.wav
 ### 核心模块
 
 #### `tts_module.py`
-- TTS客户端实现
-- WebSocket通信
-- 音频文件处理
-- 错误处理和重试
+- OpenAI流式TTS实现：`client.audio.speech.create(...).stream_to_file(...)`
+- 兼容回退讯飞WebSocket方案
+- 音频文件管理与播放（Ren'Py优先，系统回退）
 
 #### `script_day1.rpy`
 - 游戏主脚本
@@ -139,27 +158,26 @@ self.BusinessArgs = {
 
 ## 🔒 安全说明
 
-- **API密钥保护**：真实的API凭证不会被提交到版本控制
-- **配置模板**：使用模板文件避免意外泄露
-- **测试文件**：包含真实密钥的测试文件已在`.gitignore`中排除
+- 不要在仓库中硬编码任何API密钥
+- 使用 `game/tts_config_template.rpy` 模板与系统环境变量
+- `.gitignore` 已排除 `game/tts_config.rpy`、音频与测试脚本
 
 ## 🐛 故障排除
 
 ### 常见问题
 
 1. **TTS初始化失败**
-   - 检查API凭证是否正确
-   - 确认网络连接正常
-   - 查看控制台错误信息
+   - 确认已设置 `OPENAI_API_KEY`（或讯飞环境变量）
+   - 检查 `OPENAI_BASE_URL` 是否可用（yunwu.ai 或官方OpenAI）
+   - 若使用OpenAI流式，请安装 `openai` Python 包（由Ren'Py运行环境提供）
 
 2. **音频文件未生成**
    - 检查 `game/audio/tts/` 目录权限
    - 确认TTS API调用成功
    - 查看磁盘空间是否充足
 
-3. **WebSocket连接错误**
-   - 检查防火墙设置
-   - 确认讯飞服务状态
+3. **WebSocket连接错误（仅讯飞回退）**
+   - 检查防火墙设置与服务状态
    - 尝试重新初始化
 
 ### 日志文件
@@ -204,10 +222,8 @@ self.BusinessArgs = {
 
 ## 🔄 更新日志
 
-### v1.0.0 (2025-08-17)
-- ✅ 初始版本发布
-- ✅ 集成讯飞TTS API
-- ✅ 实现自动语音朗读
-- ✅ 支持音频文件保存
-- ✅ 完整的错误处理机制
-- ✅ 文本标记清理功能
+### v1.1.0 (2025-08-18)
+- ✅ 新增 OpenAI 兼容流式TTS（yunwu.ai 等）
+- ✅ 环境变量配置与安全指引
+- ✅ 兼容回退至讯飞TTS
+- ✅ 文档与模板更新

@@ -1,0 +1,7 @@
+/* 调整hos_background背景图片尺寸 */
+.hos-background {
+    background-image: url('images/hos_background.png');
+    background-size: 187.5% 187.5%; /* 按1.875倍缩放 */
+    background-repeat: no-repeat;
+    background-position: center;
+}

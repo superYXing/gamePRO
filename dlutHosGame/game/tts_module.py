@@ -1,394 +1,411 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
-
-# 添加libs目录到Python路径
-libs_path = os.path.join(os.path.dirname(__file__), 'libs')
-websocket_path = os.path.join(libs_path, 'websocket', 'websocket-client-1.8.0')
-if os.path.exists(websocket_path):
-    sys.path.insert(0, websocket_path)
-
-import tempfile
-import subprocess
-import hashlib
-import base64
-import hmac
-import json
-import ssl
-import threading
 import time
-from datetime import datetime
-from urllib.parse import urlencode
-# 使用email.utils替代wsgiref.handlers
-from email.utils import formatdate
-from time import mktime
+import hashlib
+import subprocess
+import platform
+import tempfile
 
-# 导入websocket客户端
-WebSocketApp = None
+# Ensure bundled python-packages are importable (for httpx in Ren'Py/runtime)
+def get_current_dir():
+    """Get current directory in a way that works in both Ren'Py and standalone environments"""
+    try:
+        # First try __file__ (works in most Python environments)
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        try:
+            # Try to use Ren'Py's game directory if available
+            import renpy
+            return renpy.config.gamedir
+        except (ImportError, AttributeError):
+            # Final fallback to current working directory
+            return os.path.abspath('.')
+
+_current_dir = get_current_dir()
+_python_packages_dir = os.path.join(_current_dir, 'python-packages')
+if os.path.exists(_python_packages_dir) and _python_packages_dir not in sys.path:
+    sys.path.insert(0, _python_packages_dir)
+
 try:
-    # 先尝试从本地websocket-client库导入
-    websocket_client_path = os.path.join(os.path.dirname(__file__), 'libs', 'websocket', 'websocket-client-1.8.0', 'websocket')
-    if os.path.exists(websocket_client_path):
-        sys.path.insert(0, os.path.dirname(websocket_client_path))
-        import websocket as ws_client
-        if hasattr(ws_client, 'WebSocketApp'):
-            WebSocketApp = ws_client.WebSocketApp
-            print("Using local websocket-client library")
-        else:
-            # 尝试直接导入WebSocketApp
-            from websocket import WebSocketApp
-            print("Imported WebSocketApp from local library")
-    else:
-        # 回退到系统库
-        from websocket import WebSocketApp
-        print("Using system websocket library")
-except ImportError as e:
-    print(f"Warning: websocket-client library not found: {e}")
-    WebSocketApp = None
-except Exception as e:
-    print(f"Error setting up WebSocket: {e}")
-    WebSocketApp = None
+    import httpx
+except Exception as _e:
+    httpx = None
 
-# Status constants for TTS frames
-STATUS_FIRST_FRAME = 0
-STATUS_CONTINUE_FRAME = 1
-STATUS_LAST_FRAME = 2
+# TTS模块，用于在游戏对话时播放语音
 
-class TTSClient:
-    def __init__(self, app_id, api_key, api_secret):
-        # Check if credentials are provided
-        if not app_id or not api_key or not api_secret:
-            raise ValueError("TTS credentials not properly configured")
-            
-        self.app_id = app_id
+class TTSManager:
+    def __init__(self, api_key, base_url="https://yunwu.ai/v1", model="tts-1", voice="alloy"):
+        """
+        初始化TTS管理器
+        
+        Args:
+            api_key (str): OpenAI API密钥
+            base_url (str): API基础URL
+            model (str): TTS模型名称
+            voice (str): 语音类型
+        """
         self.api_key = api_key
-        self.api_secret = api_secret
-        self.audio_data = bytearray()
-        self.is_playing = False
-        self.playback_thread = None
+        self.base_url = base_url
+        self.model = model
+        self.voice = voice
+        self._renpy_context = None  # 存储 Ren'Py 上下文
 
-    def get_tts_url(self, text):
-        """
-        Generate TTS URL with authentication
-        """
-        class Ws_Param(object):
-            def __init__(self, APPID, APIKey, APISecret, Text):
-                self.APPID = APPID
-                self.APIKey = APIKey
-                self.APISecret = APISecret
-                self.Text = Text
+    def set_renpy_context(self, renpy_module):
+        """设置 Ren'Py 上下文（从外部传入）"""
+        self._renpy_context = renpy_module
+        print(f"[TTS配置] 已设置 Ren'Py 上下文: {renpy_module}")
+        self.temp_dir = tempfile.gettempdir()
 
-                # Common parameters
-                self.CommonArgs = {"app_id": self.APPID}
-                # Business parameters - can be customized for voice, speed, etc.
-                self.BusinessArgs = {"aue": "raw", "auf": "audio/L16;rate=16000", "vcn": "x4_yezi", "tte": "utf8"}
-                self.Data = {"status": 2, "text": str(base64.b64encode(self.Text.encode('utf-8')), "UTF8")}
-
-            def create_url(self):
-                url = 'wss://tts-api.xfyun.cn/v2/tts'
-                now = datetime.now()
-                # 使用email.utils.formatdate替代wsgiref.handlers.format_date_time
-                date = formatdate(timeval=None, localtime=False, usegmt=True)
-
-                signature_origin = "host: " + "ws-api.xfyun.cn" + "\n"
-                signature_origin += "date: " + date + "\n"
-                signature_origin += "GET " + "/v2/tts " + "HTTP/1.1"
-                
-                signature_sha = hmac.new(self.APISecret.encode('utf-8'), signature_origin.encode('utf-8'),
-                                 digestmod=hashlib.sha256).digest()
-                signature_sha = base64.b64encode(signature_sha).decode(encoding='utf-8')
-
-                authorization_origin = "api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"" % (
-                    self.APIKey, "hmac-sha256", "host date request-line", signature_sha)
-                authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode(encoding='utf-8')
-                
-                v = {
-                    "authorization": authorization,
-                    "date": date,
-                    "host": "ws-api.xfyun.cn"
-                }
-                
-                url = url + '?' + urlencode(v)
-                return url
-
-        ws_param = Ws_Param(self.app_id, self.api_key, self.api_secret, text)
-        return ws_param.create_url()
-
-    def on_message(self, ws, message):
-        """
-        Handle incoming WebSocket messages
-        """
+    def _ensure_audio_dir(self):
+        """确保音频目录存在，使用适合 Ren'Py 的路径"""
         try:
-            message = json.loads(message)
-            code = message["code"]
-            audio = message["data"]["audio"]
-            audio = base64.b64decode(audio)
-            status = message["data"]["status"]
-            
-            if code != 0:
-                errMsg = message["message"]
-                print(f"TTS Error: {errMsg}, code: {code}")
-                ws.close()
+            # 在 Ren'Py 环境中使用 config.gamedir
+            if 'renpy' in sys.modules:
+                renpy = sys.modules['renpy']
+                game_dir = renpy.config.gamedir
             else:
-                # Append audio data
-                self.audio_data.extend(audio)
-                
-                # If this is the last frame, save and play
-                if status == 2:
-                    ws.close()
-                    self.save_and_play_audio()
-                    
-        except Exception as e:
-            print(f"Error processing TTS message: {e}")
-
-    def on_error(self, ws, error):
-        """
-        Handle WebSocket errors
-        """
-        print(f"WebSocket error: {error}")
-
-    def on_close(self, ws, close_status_code=None, close_msg=None):
-        """
-        Handle WebSocket closure
-        """
-        print("TTS WebSocket connection closed")
-
-    def on_open(self, ws):
-        """
-        Handle WebSocket opening
-        """
-        def run(*args):
-            d = {
-                "common": {"app_id": self.app_id},
-                "business": {"aue": "raw", "auf": "audio/L16;rate=16000", "vcn": "x4_yezi", "tte": "utf8"},
-                "data": {"status": 2, "text": str(base64.b64encode(self.current_text.encode('utf-8')), "UTF8")}
-            }
-            d = json.dumps(d)
-            ws.send(d)
-            
-        threading.Thread(target=run).start()
-
-    def save_and_play_audio(self):
-        """
-        Save the audio data to a file and play it
-        """
-        if not self.audio_data:
-            return
-            
-        # Create audio directory if it doesn't exist
-        audio_dir = os.path.join(os.path.dirname(__file__), 'audio', 'tts')
+                game_dir = _current_dir
+            audio_dir = os.path.join(game_dir, 'audio', 'tts')
+        except Exception:
+            # 回退到全局目录
+            audio_dir = os.path.join(_current_dir, 'audio', 'tts')
         os.makedirs(audio_dir, exist_ok=True)
-        
-        # Generate filename based on current time and text hash
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        text_hash = hashlib.md5(self.current_text.encode('utf-8')).hexdigest()[:8]
-        
-        # Save as MP3 format
-        mp3_filename = os.path.join(audio_dir, f"tts_{timestamp}_{text_hash}.mp3")
-        wav_filename = os.path.join(audio_dir, f"tts_{timestamp}_{text_hash}.wav")
-        
-        # First convert to WAV, then to MP3
-        self.convert_to_wav(self.audio_data, wav_filename)
-        
-        # Convert WAV to MP3 if possible
-        if self.convert_wav_to_mp3(wav_filename, mp3_filename):
-            # Use MP3 file
-            final_filename = mp3_filename
-            # Clean up WAV file
-            try:
-                os.remove(wav_filename)
-            except:
-                pass
-        else:
-            # Use WAV file as fallback
-            final_filename = wav_filename
-        
-        print(f"TTS音频已保存: {final_filename}")
-        
-        # Play the audio file
-        self.play_audio(final_filename)
-        
-        # Clear audio data
-        self.audio_data = bytearray()
+        return audio_dir
 
-    def convert_to_wav(self, raw_audio_data, output_filename):
-        """
-        Convert raw audio data to WAV format
-        """
-        try:
-            import wave
-            with wave.open(output_filename, 'wb') as wav_file:
-                wav_file.setparams((1, 2, 16000, 0, 'NONE', 'NONE'))
-                wav_file.writeframes(raw_audio_data)
-            return True
-        except Exception as e:
-            print(f"Error converting to WAV: {e}")
-            return False
+    def _new_filename(self, text: str):
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()[:8]
+        audio_dir = self._ensure_audio_dir()
+        return os.path.join(audio_dir, f"tts_{ts}_{text_hash}.ogg")
 
-    def convert_wav_to_mp3(self, wav_filename, mp3_filename):
-        """
-        Convert WAV file to MP3 format using ffmpeg or other tools
-        """
+    def _normalize_base_url(self):
+        b = (self.base_url or '').rstrip('/')
+        # Ensure /v1 suffix for OpenAI-compatible endpoints
+        if not b.endswith('/v1'):
+            b = b + '/v1'
+        return b
+
+    def _get_renpy_context(self):
+        """尝试获取 Ren'Py 上下文"""
+        # 方法0: 检查是否已经设置了上下文
+        if self._renpy_context is not None:
+            print(f"[TTS调试] 使用已存储的 renpy 上下文: {self._renpy_context}")
+            return self._renpy_context
+        
+        # 方法1: 尝试直接导入
         try:
-            # Try using ffmpeg first
-            result = subprocess.run([
-                'ffmpeg', '-i', wav_filename, '-acodec', 'mp3', 
-                '-ab', '128k', '-ac', '1', '-ar', '16000', 
-                mp3_filename, '-y'  # -y to overwrite existing files
-            ], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            
-            if result.returncode == 0:
-                print(f"Successfully converted to MP3: {mp3_filename}")
-                return True
-            else:
-                print(f"FFmpeg conversion failed: {result.stderr}")
-                
-        except FileNotFoundError:
-            print("FFmpeg not found, trying alternative conversion...")
-            
-        # Try using Windows built-in tools or Python libraries as fallback
-        try:
-            # Alternative: use pydub if available
-            from pydub import AudioSegment
-            from pydub.utils import which
-            
-            # Load WAV file
-            audio = AudioSegment.from_wav(wav_filename)
-            
-            # Export as MP3
-            audio.export(mp3_filename, format="mp3", bitrate="128k")
-            print(f"Successfully converted to MP3 using pydub: {mp3_filename}")
-            return True
-            
+            import renpy
+            print(f"[TTS调试] 成功导入 renpy 模块: {renpy}")
+            self._renpy_context = renpy  # 缓存上下文
+            return renpy
         except ImportError:
-            print("pydub not available for MP3 conversion")
-        except Exception as e:
-            print(f"Error converting with pydub: {e}")
+            print("[TTS调试] 无法导入 renpy 模块")
         
-        print("MP3 conversion failed, will use WAV format")
-        return False
-
-    def play_audio(self, filename):
-        """
-        Play audio file using Ren'Py's audio system or system player
-        """
+        # 方法2: 检查全局变量中是否有 renpy
+        if 'renpy' in globals():
+            print("[TTS调试] 在 globals() 中找到 renpy")
+            self._renpy_context = globals()['renpy']
+            return globals()['renpy']
+        
+        # 方法3: 检查 builtins 中是否有 renpy
         try:
-            # Try to use Ren'Py's audio system if available
+            import builtins
+            if hasattr(builtins, 'renpy'):
+                print("[TTS调试] 在 builtins 中找到 renpy")
+                self._renpy_context = builtins.renpy
+                return builtins.renpy
+        except:
+            pass
+        
+        print("[TTS调试] 所有方法都无法获取 renpy 上下文")
+        return None
+
+    def _play_audio(self, filename: str):
+        """使用 Ren'Py 标准方式播放音频"""
+        # 确保文件存在
+        if not os.path.exists(filename):
+            print(f"音频文件不存在: {filename}")
+            return
+        
+        try:
+            # 获取相对于游戏目录的路径
             try:
                 import renpy
-                # Convert to relative path for Ren'Py
-                relative_path = os.path.relpath(filename, renpy.config.basedir)
-                renpy.sound.play(relative_path, channel="voice")
-                print(f"Playing TTS audio via Ren'Py: {relative_path}")
-            except:
-                # Fallback to system audio player
-                self.play_with_system(filename)
-        except Exception as e:
-            print(f"Error playing audio: {e}")
-    
-    def play_with_system(self, filename):
-        """
-        Play audio using system player as fallback
-        """
-        try:
-            import platform
-            system = platform.system()
+                base_dir = renpy.config.basedir
+                print(f"[TTS调试] 获取到 renpy.config.basedir: {base_dir}")
+            except (ImportError, AttributeError):
+                base_dir = _current_dir
+                print(f"[TTS调试] 使用默认目录: {base_dir}")
             
-            if system == "Windows":
-                # Use Windows Media Player or built-in sound player
-                subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{filename}').PlaySync()"], 
-                               shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            elif system == "Darwin":  # macOS
-                subprocess.run(["afplay", filename], check=True)
-            elif system == "Linux":
-                # Try common Linux audio players
-                players = ["paplay", "aplay", "mpg123", "play"]
-                for player in players:
-                    try:
-                        subprocess.run([player, filename], check=True)
-                        break
-                    except FileNotFoundError:
-                        continue
+            rel_path = os.path.relpath(filename, base_dir)
+            # 统一使用正斜杠，符合 Ren'Py 标准
+            rel_path = rel_path.replace('\\', '/')
             
-            print(f"Playing TTS audio via system: {filename}")
-        except Exception as e:
-            print(f"Error playing audio with system player: {e}")
-
-    def synthesize_and_play(self, text):
-        """
-        Synthesize text to speech and play it
-        """
-        if not text or self.is_playing:
-            return
+            print(f"[TTS音频] 播放文件: {rel_path}")
             
-        self.current_text = text
-        self.is_playing = True
-        
-        try:
-            if WebSocketApp is None:
-                raise Exception("WebSocketApp not available")
+            # 检查 renpy 模块的可用属性
+            try:
+                import renpy
+                print(f"[TTS调试] renpy 模块可用属性: {[attr for attr in dir(renpy) if not attr.startswith('_')]}")
                 
-            url = self.get_tts_url(text)
-            ws = WebSocketApp(url,
-                            on_message=self.on_message,
-                            on_error=self.on_error,
-                            on_close=self.on_close)
-            ws.on_open = self.on_open
-            ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+                # 尝试使用不同的音频播放方法
+                success = False
+                
+                # 方法1: 尝试 renpy.music
+                if hasattr(renpy, 'music'):
+                    try:
+                        renpy.music.play(rel_path, channel="voice", loop=False, fadein=0.1)
+                        print(f"✓ [TTS音频] 通过 renpy.music 播放成功: {rel_path}")
+                        success = True
+                    except Exception as e:
+                        print(f"[TTS音频] renpy.music 播放失败: {e}")
+                else:
+                    print("[TTS调试] renpy.music 不可用")
+                
+                # 方法2: 尝试 renpy.sound
+                if not success and hasattr(renpy, 'sound'):
+                    try:
+                        renpy.sound.play(rel_path, channel="voice", loop=False)
+                        print(f"✓ [TTS音频] 通过 renpy.sound 播放成功: {rel_path}")
+                        success = True
+                    except Exception as e:
+                        print(f"[TTS音频] renpy.sound 播放失败: {e}")
+                else:
+                    print("[TTS调试] renpy.sound 不可用")
+                
+                # 方法3: 尝试直接调用 renpy.play（如果存在）
+                if not success and hasattr(renpy, 'play'):
+                    try:
+                        renpy.play(rel_path, channel="voice")
+                        print(f"✓ [TTS音频] 通过 renpy.play 播放成功: {rel_path}")
+                        success = True
+                    except Exception as e:
+                        print(f"[TTS音频] renpy.play 播放失败: {e}")
+                else:
+                    print("[TTS调试] renpy.play 不可用")
+                
+                # 方法4: 尝试通过 renpy.call_screen 或其他方式
+                if not success:
+                    print("[TTS调试] 所有 renpy 音频方法都不可用")
+                    # 检查是否有其他可能的音频相关方法
+                    audio_attrs = [attr for attr in dir(renpy) if 'audio' in attr.lower() or 'music' in attr.lower() or 'sound' in attr.lower() or 'play' in attr.lower()]
+                    if audio_attrs:
+                        print(f"[TTS调试] 发现可能的音频相关属性: {audio_attrs}")
+                
+                if success:
+                    return
+                    
+            except ImportError:
+                print("[TTS调试] 无法导入 renpy 模块")
+                
         except Exception as e:
-            print(f"Error in TTS synthesis: {e}")
-        finally:
-            self.is_playing = False
-
-# Global TTS client instance
-tts_client = None
-
-def init_tts(app_id, api_key, api_secret):
-    """
-    Initialize the TTS client
-    """
-    global tts_client
-    try:
-        tts_client = TTSClient(app_id, api_key, api_secret)
-        return True
-    except ValueError as e:
-        print(f"TTS API凭证无效，使用模拟模式: {e}")
-        # 创建一个模拟TTS客户端
-        tts_client = MockTTSClient()
-        return False
-    except Exception as e:
-        print(f"Error initializing TTS: {e}")
-        return False
-
-class MockTTSClient:
-    """
-    Mock TTS client for testing when real API is not available
-    """
-    def __init__(self):
-        self.is_playing = False
+            print(f"[TTS音频] Ren'Py 播放失败: {e}")
+        
+        # 如果 Ren'Py 播放失败，使用系统播放器
+        print("[警告] Ren'Py 播放失败，使用系统播放器")
+        self._system_audio_fallback(filename)
     
-    def synthesize_and_play(self, text):
-        """
-        Mock synthesis - just print the text that would be spoken
-        """
-        if not text or self.is_playing:
-            return
-            
-        self.is_playing = True
-        try:
-            print(f"[TTS模拟] 播放: {text}")
-            # 模拟音频播放时间
-            time.sleep(len(text) * 0.1)  # 大约每个字符0.1秒
-        except Exception as e:
-            print(f"Mock TTS error: {e}")
-        finally:
-            self.is_playing = False
+    def _system_audio_fallback(self, filename: str):
+        """系统音频播放回退方案"""
+        print(f"[TTS音频] 使用系统播放器播放: {filename}")
+        system = platform.system()
+        if system == 'Windows':
+            try:
+                # 在Windows上静默播放音频文件
+                subprocess.Popen(["cmd", "/c", "start", "/min", "", filename], shell=True)
+                print("✓ [TTS音频] 系统播放器启动成功")
+            except Exception:
+                try:
+                    subprocess.Popen(["wmplayer", "/close", filename], shell=True)
+                    print("✓ [TTS音频] Windows Media Player 启动成功")
+                except Exception as e:
+                    print(f"✗ [TTS音频] 系统播放失败: {e}")
+        elif system == 'Darwin':
+            try:
+                subprocess.Popen(["afplay", filename])
+                print("✓ [TTS音频] macOS 播放成功")
+            except Exception as e:
+                print(f"✗ [TTS音频] macOS 播放失败: {e}")
+        else:
+            # Linux 和其他系统
+            for player in ("paplay", "aplay", "mpg123", "play"):
+                try:
+                    subprocess.Popen([player, filename])
+                    print(f"✓ [TTS音频] 使用 {player} 播放成功")
+                    break
+                except Exception:
+                    continue
+            else:
+                print("✗ [TTS音频] 找不到可用的音频播放器")
 
-def speak_text(text):
+    def synthesize_to_file(self, text: str, voice: str = None) -> str:
+        """Synthesize speech to an MP3 file and return the file path.
+
+        Works outside Ren'Py; does not attempt playback.
+        """
+        if not text:
+            raise ValueError("text is empty")
+        if httpx is None:
+            raise ImportError("httpx is not available to perform HTTP requests")
+
+        v = (voice or self.voice or "alloy").strip()
+        url = self._normalize_base_url() + "/audio/speech"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "voice": v,
+            "input": text.strip(),
+            "response_format": "opus",
+            "format": "opus",
+        }
+
+        outfile = self._new_filename(text)
+        # Stream to file to avoid large memory usage
+        with httpx.Client(timeout=120, trust_env=True) as client:
+            with client.stream("POST", url, headers=headers, json=payload) as resp:
+                resp.raise_for_status()
+                with open(outfile, "wb") as f:
+                    for chunk in resp.iter_bytes():
+                        if chunk:
+                            f.write(chunk)
+
+        return outfile
+        
+    def say_callback(self, who, what, **kwargs):
+        """
+        用于Ren'Py的say_callback函数
+        当角色说话时会调用此函数，生成并播放TTS音频
+        
+        Args:
+            who (str): 说话者
+            what (str): 说的话
+            **kwargs: 其他参数
+        """
+        try:
+            outfile = self.synthesize_to_file(str(what))
+            self._play_audio(outfile)
+        except Exception as e:
+            print(f"TTS错误: {e}")
+            # 发生错误时不中断游戏流程
+            pass
+
+# 全局TTS管理器实例
+tts_manager = None
+
+def init_tts(api_key, base_url="https://yunwu.ai/v1", model="tts-1", voice="alloy"):
     """
-    Speak the given text using TTS
+    初始化TTS模块
+    
+    Args:
+        api_key (str): OpenAI API密钥
+        base_url (str): API基础URL
+        model (str): TTS模型名称
+        voice (str): 语音类型
     """
-    global tts_client
-    if tts_client and text:
-        # Run in a separate thread to avoid blocking the game
-        threading.Thread(target=tts_client.synthesize_and_play, args=(text,)).start()
+    global tts_manager
+    tts_manager = TTSManager(api_key, base_url, model, voice)
+
+def say_callback(who, what, **kwargs):
+    """
+    Ren'Py say_callback函数
+    """
+    if tts_manager:
+        tts_manager.say_callback(who, what, **kwargs)
+    # 如果未初始化TTS管理器，则不执行任何操作
+
+def speak_text(text, emotion=None, speed=0.8, voice="alloy"):
+    """
+    文本转语音函数，适配script.rpy中的调用方式
+    返回生成的音频文件路径，而不是直接播放
+    
+    Args:
+        text (str): 要转换为语音的文本
+        emotion (str): 情感类型（当前实现中未使用）
+        speed (float): 语速（当前实现中未使用）
+        voice (str): 语音类型
+    
+    Returns:
+        str: 生成的音频文件路径，如果失败则返回None
+    """
+    global tts_manager
+    if tts_manager and text:
+        # 保存原始语音设置
+        original_voice = tts_manager.voice
+        try:
+            if voice:
+                tts_manager.voice = voice
+            outfile = tts_manager.synthesize_to_file(text)
+            # 返回相对路径，适合Ren'Py使用
+            if outfile and os.path.exists(outfile):
+                # 将绝对路径转换为相对于game目录的路径
+                try:
+                    if 'renpy' in sys.modules:
+                        renpy = sys.modules['renpy']
+                        game_dir = renpy.config.gamedir
+                    else:
+                        game_dir = _current_dir
+                    rel_path = os.path.relpath(outfile, game_dir)
+                    return rel_path.replace('\\', '/')  # 使用正斜杠
+                except:
+                    return outfile  # 如果转换失败，返回绝对路径
+            return None
+        except Exception as e:
+            print(f"[TTS错误] speak_text失败: {e}")
+            return None
+        finally:
+            tts_manager.voice = original_voice
+    # 如果未初始化TTS管理器，则返回None
+    return None
+
+def test_tts():
+    """简单的TTS文件生成测试"""
+    print("=== TTS文件生成测试 ===")
+    
+    try:
+        # 创建TTS管理器
+        manager = TTSManager(
+            api_key="sk-0GszUjESD38HSUiSDFpMmRYHIeCdeunPhJ2eRLrwAT6pJZGJ",
+            base_url="https://yunwu.ai/v1"
+        )
+        print("✓ TTS管理器创建成功")
+        
+        # 测试文件生成
+        test_text = "这是一个TTS测试，音频文件生成功能正常"
+        print(f"开始生成音频: {test_text}")
+        
+        import time
+        start_time = time.time()
+        
+        output_file = manager.synthesize_to_file(test_text)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        print(f"✓ 音频文件生成成功: {output_file}")
+        print(f"✓ 生成耗时: {duration:.2f}秒")
+        
+        # 检查文件是否存在
+        import os
+        if os.path.exists(output_file):
+            file_size = os.path.getsize(output_file)
+            print(f"✓ 文件确认存在，大小: {file_size} 字节")
+            print(f"✓ 文件路径: {output_file}")
+        else:
+            print("✗ 文件不存在")
+        
+        return True
+        
+    except Exception as e:
+        import traceback
+        print(f"✗ 测试失败: {e}")
+        print("详细错误信息:")
+        traceback.print_exc()
+        return False
+
+if __name__ == "__main__":
+    test_tts()

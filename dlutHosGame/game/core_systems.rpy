@@ -1,6 +1,7 @@
 # 核心系统文件 - 变量、常量和核心函数
 
 # 初始化游戏变量
+default player_name = "医生"  # 玩家角色名称
 default day = 1
 default run_count = 1
 default time_minutes = 480  # 08:00 (480分钟) - 16:00 (960分钟)
@@ -8,6 +9,10 @@ default sanity = 80
 default score = 0
 default diagnosis_progress = 0
 default humane_count = 0
+
+# 定义角色
+define you = Character("[player_name]", color="#ffffff")
+define system = Character("系统", color="#cccccc")
 
 # 基础数值常量 (Day1适用)
 # 理性动作
