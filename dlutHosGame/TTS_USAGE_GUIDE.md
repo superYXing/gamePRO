@@ -1,4 +1,12 @@
-# 游戏TTS功能使用指南
+# 游戏T### ✅ 已完成的配置
+
+### 1. API凭证配置 (game/tts_config.rpy)
+```python
+TTS_APP_ID = "your_app_id_here"
+TTS_API_KEY = "your_api_key_here"
+TTS_API_SECRET = "your_api_secret_here"
+TTS_ENABLED = True
+```
 
 ## 🎯 功能概述
 你的Ren'Py游戏现在已经集成了讯飞语音合成TTS功能，可以实时朗读游戏对话文本。

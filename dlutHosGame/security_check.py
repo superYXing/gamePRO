@@ -13,11 +13,11 @@ def check_for_sensitive_data():
     print("🔍 GitHub部署前安全检查")
     print("=" * 50)
     
-    # 定义敏感数据模式
+    # 定义敏感数据模式（使用占位符避免泄露真实密钥）
     sensitive_patterns = [
-        r'8f9f084d',
-        r'58ddf31e282b691d43929d3fd6133cd9',
-        r'ZmE2YmM3OWViMDgzOTBlZDMxMDkwOGY2',
+        r'[0-9a-f]{8}',  # APP_ID格式
+        r'[0-9a-f]{32}',  # API_KEY格式  
+        r'[A-Za-z0-9+/]{32,}',  # API_SECRET格式（Base64）
         r'TTS_APP_ID\s*=\s*["\'][^"\']*["\'](?!\s*["\']YOUR_)',
         r'TTS_API_KEY\s*=\s*["\'][^"\']*["\'](?!\s*["\']YOUR_)',
         r'TTS_API_SECRET\s*=\s*["\'][^"\']*["\'](?!\s*["\']YOUR_)'
