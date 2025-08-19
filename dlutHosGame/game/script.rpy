@@ -31,13 +31,20 @@ init python:
             sys.path.insert(0, _python_packages_dir)
         
         import tts_module
-        # 明文配置（按需修改）
-        API_KEY = "sk-0GszUjESD38HSUiSDFpMmRYHIeCdeunPhJ2eRLrwAT6pJZGJ"
-        BASE_URL = "https://yunwu.ai/v1"
-        MODEL = "tts-1"
-        DEFAULT_VOICE = "alloy"
+        # 从统一配置读取
+        try:
+            from config import config as game_config
+            _api_key = game_config.api_key
+            _base_url = game_config.base_url
+            _model = game_config.tts_model
+            _voice = game_config.tts_voice
+        except Exception:
+            _api_key = os.getenv("OPENAI_API_KEY", "")
+            _base_url = os.getenv("OPENAI_BASE_URL", "https://yunwu.ai/v1")
+            _model = os.getenv("OPENAI_TTS_MODEL", "tts-1")
+            _voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
         
-        tts_module.init_tts(api_key=API_KEY, base_url=BASE_URL, model=MODEL, voice=DEFAULT_VOICE)
+        tts_module.init_tts(api_key=_api_key, base_url=_base_url, model=_model, voice=_voice)
         
         # 传递 Ren'Py 上下文给 TTS 管理器
         import renpy
