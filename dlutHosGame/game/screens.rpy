@@ -351,6 +351,7 @@ screen main_menu():
     frame:
         style "main_menu_frame"
 
+    add "bg2.png" align (0.8, 0.5) 
     ## use 语句将其他的屏幕包含进此屏幕。标题屏幕的实际内容在导航屏幕中。
     use navigation
 

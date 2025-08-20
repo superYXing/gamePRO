@@ -193,9 +193,7 @@ label start:
         pos (0, 0)
     with dissolve
 
-    "欢迎来到大连医院模拟器"
-    
-    "点击开始游戏"
+    "欢迎来到《完美医生》"
     
     # 跳转到day1
     jump day1_start
