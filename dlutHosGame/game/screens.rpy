@@ -351,7 +351,7 @@ screen main_menu():
     frame:
         style "main_menu_frame"
 
-    add "bg2.png" align (0.8, 0.5) 
+ 
     ## use 语句将其他的屏幕包含进此屏幕。标题屏幕的实际内容在导航屏幕中。
     use navigation
 
@@ -799,10 +799,24 @@ screen preferences():
                             action Preference("all mute", "toggle")
                             style "mute_all_button"
 
+                    # 添加TTS开关
+                    frame:
+                        style "tts_frame"
+                        has hbox:
+                            style_prefix "tts"
+                            label _("TTS 语音")
+                            textbutton _("关") action Function(set_tts_enabled, False)
+                            textbutton _("开") action Function(set_tts_enabled, True)
+                            text _("（当前：{0}）").format("开" if tts_enabled else "关")
+
 
 style pref_label is gui_label
 style pref_label_text is gui_label_text
 style pref_vbox is vbox
+
+style tts_frame is gui_frame
+style tts_button is gui_button
+style tts_button_text is gui_button_text
 
 style radio_label is pref_label
 style radio_label_text is pref_label_text

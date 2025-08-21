@@ -32,6 +32,22 @@ init -10 python:
         voice=_tts_voice
     )
     print("[TTS] 直接初始化TTS管理器完成")
+
+init -9 python:
+    def set_tts_enabled(val):
+        global tts_enabled, _tts_last_notified
+        newv = bool(val)
+        oldv = tts_enabled
+        tts_enabled = newv
+        # 只有变化时才提示一次
+        if _tts_last_notified is None or newv != _tts_last_notified:
+            _tts_last_notified = newv
+            renpy.notify("TTS语音已启用" if newv else "TTS语音已禁用")
+
+# 统一的 TTS 状态
+default tts_enabled = True
+default _tts_last_notified = None
+
 init python:
     # 启动异步任务，返回一个“任务盒子”
     def spawn_async(fn, *args, **kwargs):
@@ -315,12 +331,15 @@ label day1_start:
         pos (0, 0)
     # 播放医院背景音乐
     play music "audio/bgm/amb_hospital.ogg" loop
-    
+    with dissolve
     # 开场介绍第一段 - 同时显示和播放TTS
     $ intro_text1 = "在AI时代，医生面临着前所未有的挑战。"
     $ speak_text_and_play(intro_text1, voice="shimmer")
     "[intro_text1]"
-    
+    show doctor_1:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
     # 开场介绍第二段 - 同时显示和播放TTS
     $ intro_text2 = "你将扮演一位被困在无尽工作循环中的医生，在每一次诊疗中寻找理性与人性的平衡。"
     $ speak_text_and_play(intro_text2, voice="shimmer")
@@ -330,12 +349,6 @@ label day1_start:
     $ intro_text3 = "点击开始游戏，开启你的医生之旅"
     $ speak_text_and_play(intro_text3, voice="shimmer")
     "[intro_text3]"
-    
-    # 显示bg5.png，全屏
-    show bg5:
-        size (config.screen_width, config.screen_height)
-        pos (0, 0)
-    with dissolve
 
     # 实时生成并播放旁白语音 - 使用异步播放
     $ narrator_text = f"患者{patient_info['name']}，{patient_info['gender']}，{patient_info['age']}岁，前来就诊。"
@@ -355,7 +368,7 @@ label day1_start:
     )
 
     # 显示bg2.png，全屏
-    show bg2:
+    show doctor_5:
         size (config.screen_width, config.screen_height)
         pos (0, 0)
     with dissolve
@@ -373,7 +386,7 @@ label day1_start:
     
     # 记录对话历史
     $ conversation_history.append({"role": "patient", "content": patient_first_message})
-    
+
     # 构建医生AI的对话上下文
     $ doctor_context = f"患者{patient_info['name']}主诉：{patient_first_message}"
     
@@ -389,7 +402,10 @@ label day1_start:
             ([{"role": "user", "content": f"患者{patient_info['name']}（{patient_info['gender']}，{patient_info['age']}岁）说：'{patient_first_message}'。请生成一个简单、直接的医生回应，控制在40字以内。"}], "中性")
     ]
     )
-
+    show doctor_5:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
     # 这一行台词会立即显示；同时后台已在生成AI文本
     "您在脑海中快速思考着几种不同的回应方式"
 
@@ -398,7 +414,10 @@ label day1_start:
     $ option1 = ai_responses.get("理性")
     $ option2 = ai_responses.get("人性") 
     $ option3 = ai_responses.get("中性")
-    
+    show doctor_4:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
 
     
     # 生成医生的三个选项
@@ -449,7 +468,10 @@ label day1_choice_result:
         patient_info, 
         "你需要根据医生的话继续交流，可能询问更多细节、表达担忧或寻求更多信息。"
     )
-
+    show doctor_4:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
     # 这一行台词会立即显示；同时后台已在生成AI文本
     "患者仔细听着您的询问，眼神中透露出担忧和期待"
 
@@ -463,7 +485,11 @@ label day1_choice_result:
     $ print("[TTS播放] 开始播放旁白...")
     $ speak_text_and_play(narrator_text2, voice="shimmer")
     "[narrator_text2]"
-  
+    
+    show doctor_5:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
     # 实时生成并播放患者语音 - 使用异步播放
     $ print("[TTS播放] 开始播放患者语音...")
     $ speak_text_and_play(patient_second_message, voice="nova")
@@ -484,7 +510,10 @@ label day1_choice_result:
             ([{"role": "user", "content": f"患者{patient_info['name']}刚才说：'{patient_second_message}'。请生成一个简单、直接的医生回应，控制在40字以内。"}], "中性")
     ]
     )
-
+    show doctor_4:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
+    with dissolve
     # 这一行台词会立即显示；同时后台已在生成AI文本
     "您看着患者期待的眼神，思考着下一步该如何询问"
 
@@ -548,7 +577,9 @@ label day1_choice_result2:
     $ print("[TTS播放] 开始播放旁白...")
     $ speak_text_and_play(narrator_text3, voice="shimmer")
     "[narrator_text3]"
-  
+    show doctor_5:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
     # 实时生成并播放患者语音 - 使用异步播放
     $ print("[TTS播放] 开始播放患者语音...")
     $ speak_text_and_play(patient_third_message, voice="nova")
@@ -576,7 +607,9 @@ label day1_choice_result2:
         $ option3_2 = f"{patient_info['name']}，不要太担心，我们会帮您找到最合适的治疗方法。"
     if not option3_3:
         $ option3_3 = f"需要综合评估病情后才能确定具体的治疗计划。"
-    
+    show doctor_4:
+        size (config.screen_width, config.screen_height)
+        pos (0, 0)
     # 生成医生的三个选项
     menu:
         "[option3_1]":
@@ -636,7 +669,7 @@ label day1_choice_result3:
 
 label day1_end:
     # 显示bg4.png，全屏
-    show bg4:
+    show die:
         size (config.screen_width, config.screen_height)
         pos (0, 0)
     with dissolve
@@ -651,11 +684,15 @@ label day1_end:
     "[dialogue_summary]"
     
     # 显示结束画面
-    show black:
+    show die:
         size (config.screen_width, config.screen_height)
         pos (0, 0)
     with fade
     "第一天的AI对话诊疗到此结束。"
     
     # 返回主菜单或者跳转到下一天
+    return
+
+label before_main_menu:
+    $ set_tts_enabled(tts_enabled)   # 这行只会在第一次进入时提示一次
     return

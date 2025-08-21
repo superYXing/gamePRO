@@ -29,8 +29,24 @@ if os.path.exists(_python_packages_dir) and _python_packages_dir not in sys.path
 
 try:
     import httpx
-except Exception as _e:
+    print(f"[TTS] httpx库加载成功，版本: {httpx.__version__}")
+except ImportError as _e:
+    print(f"[TTS] httpx库导入失败: {_e}")
     httpx = None
+except Exception as _e:
+    print(f"[TTS] httpx库加载错误: {_e}")
+    httpx = None
+
+try:
+    from dotenv import load_dotenv
+except Exception as _e:
+    load_dotenv = None
+
+# 加载 .env 文件
+if load_dotenv is not None:
+    # 尝试从当前目录和上级目录加载.env文件
+    load_dotenv()
+    load_dotenv(os.path.join(os.path.dirname(_current_dir), '.env'))
 
 # TTS模块，用于在游戏对话时播放语音
 
@@ -246,35 +262,49 @@ class TTSManager:
         """
         if not text:
             raise ValueError("text is empty")
+            
         if httpx is None:
+            print(f"[TTS错误] httpx库不可用，无法合成语音")
+            print(f"[TTS提示] 请安装httpx库: pip install httpx")
             raise ImportError("httpx is not available to perform HTTP requests")
 
-        v = (voice or self.voice or "alloy").strip()
-        url = self._normalize_base_url() + "/audio/speech"
+        try:
+            v = (voice or self.voice or "alloy").strip()
+            url = self._normalize_base_url() + "/audio/speech"
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "voice": v,
-            "input": text.strip(),
-            "response_format": "opus",
-            "format": "opus",
-        }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.model,
+                "voice": v,
+                "input": text.strip(),
+                "response_format": "opus",
+                "format": "opus",
+            }
 
-        outfile = self._new_filename(text)
-        # Stream to file to avoid large memory usage
-        with httpx.Client(timeout=120, trust_env=True) as client:
-            with client.stream("POST", url, headers=headers, json=payload) as resp:
-                resp.raise_for_status()
-                with open(outfile, "wb") as f:
-                    for chunk in resp.iter_bytes():
-                        if chunk:
-                            f.write(chunk)
+            outfile = self._new_filename(text)
+            print(f"[TTS] 正在合成语音: {text[:50]}... (声音: {v})")
+            
+            # Stream to file to avoid large memory usage
+            with httpx.Client(timeout=120, trust_env=True) as client:
+                with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    resp.raise_for_status()
+                    with open(outfile, "wb") as f:
+                        for chunk in resp.iter_bytes():
+                            if chunk:
+                                f.write(chunk)
 
-        return outfile
+            print(f"[TTS] 语音合成成功: {os.path.basename(outfile)}")
+            return outfile
+            
+        except httpx.HTTPError as e:
+            print(f"[TTS错误] HTTP请求失败: {e}")
+            raise
+        except Exception as e:
+            print(f"[TTS错误] 语音合成失败: {e}")
+            raise
         
     def say_callback(self, who, what, **kwargs):
         """
@@ -367,10 +397,14 @@ def test_tts():
     print("=== TTS文件生成测试 ===")
     
     try:
+        # 从环境变量获取配置
+        api_key = os.getenv("OPENAI_API_KEY", "sk-0GszUjESD38HSUiSDFpMmRYHIeCdeunPhJ2eRLrwAT6pJZGJ")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://yunwu.ai/v1")
+        
         # 创建TTS管理器
         manager = TTSManager(
-            api_key="sk-0GszUjESD38HSUiSDFpMmRYHIeCdeunPhJ2eRLrwAT6pJZGJ",
-            base_url="https://yunwu.ai/v1"
+            api_key=api_key,
+            base_url=base_url
         )
         print("✓ TTS管理器创建成功")
         

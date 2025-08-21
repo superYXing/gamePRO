@@ -1,2 +1,51 @@
-/.lingma
+# Ren'Py 生成的文件
+*.rpyc
+*.rpyb
+*.rpymc
+*.pyc
+*.pyo
+game/cache/
+game/saves/
+log.txt
+errors.txt
+traceback.txt
+files.txt
+
+# TTS 生成的临时音频
+game/audio/tts_*.mp3
+game/audio/temp_*.mp3
+
+# 敏感信息文件
+.env
+*.key
+**/api_keys.py
+
+# Python 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE 和编辑器
 /.vscode
+/.idea
+*.sublime-project
+*.sublime-workspace
+/.lingma
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+__pycache__/
+
+# 日志文件
+*.log
+game/log.txt
+
+# 如果您使用CI/CD，则可能需要这些
+/build/
+/dist/
+/.github/
+
+# Ren'Py 发布构建文件
+/dlutHosGame-*/
